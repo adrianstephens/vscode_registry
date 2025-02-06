@@ -89,7 +89,10 @@
             "label": "PACKAGE",
             "command": "node E:\\Github\\vscode-vsce\\vsce package",
             "problemMatcher": [],
-            "dependsOn": "prepublish"
+			"dependsOn": [
+				"npm: compile",
+				"Build Release reg.exe"
+			]
         }
 	],
 	"inputs": [

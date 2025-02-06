@@ -26,10 +26,12 @@ public:
 		view 	substr(int i, int j)	const	{ return {a + i, a + i + j}; }
 		view 	trim()					const	{
 			auto a = begin(), b = end();
-			while (is_whitespace(*a))
-				a++;
-			while (b > a && is_whitespace(b[-1]))
-				--b;
+            if (a) {
+                while (is_whitespace(*a))
+                    a++;
+                while (b > a && is_whitespace(b[-1]))
+                    --b;
+            }
 			return {a, b};
 		}
 		friend string operator+(const view &a, const view &b);
@@ -59,7 +61,7 @@ public:
 	bool 	empty()				const 	{ return !p || !p[0]; }
 	auto	begin()				const	{ return p; }
 	auto	end()				const	{ return p + length(); }
-	auto&	back()				const	{ return end()[-1]; }
+	auto	back()				const	{ auto e = end(); return e ? e[-1] : 0; }
 	auto& 	operator[](int i)	const 	{ return p[i]; }
 	view 	substr(int a) 		const	{ return (operator view()).substr(a); }
 	view 	substr(int a, int b)const	{ return (operator view()).substr(a, b); }
@@ -70,13 +72,13 @@ public:
 	void	pop_back()		{ auto t = end(); t[-1] = 0; }
 
 	string&& toupper() && {
-    	for (auto i = p; *i; ++i)
-        	*i = to_upper(*i);
+		for (auto i = p; *i; ++i)
+			*i = to_upper(*i);
 		return static_cast<string&&>(*this);
 	}
 	string&& tolower() && {
-    	for (auto i = p; *i; ++i)
-        	*i = to_lower(*i);
+		for (auto i = p; *i; ++i)
+			*i = to_lower(*i);
 		return static_cast<string&&>(*this);
 	}
 
@@ -117,12 +119,15 @@ public:
 
 	template<typename R> static string read_to(R &r, wchar_t terminator) {
 		string  ret;
-		wchar_t buffer[256], *p = buffer;
-		wchar_t	c;
+		wchar_t buffer[256];
+		int	c;
 
 		do {
-			while (r.get(c) && c != terminator && p < ::end(buffer))
+			wchar_t *p = buffer;
+			while ((c = r.getc()) >= 0 && c != terminator && p < ::end(buffer))
 				*p++ = c;
+			if (p == buffer)
+				break;
 
 			ret += view(buffer, p - buffer);
 		} while (c >= 0 && c != terminator);

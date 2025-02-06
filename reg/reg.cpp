@@ -63,36 +63,45 @@ struct FileReader {
 	FILE	*h;
 	FileReader(FILE *h) : h(h) {}
 	FileReader(const wchar_t *filename) {
-		if (_wfopen_s(&h, filename, L"rb") == 0) {
-			auto b0 = getc(h);
+		if (_wfopen_s(&h, filename, L"r") == 0) {
+			auto b0 = ::getc(h);
 			if (b0 == 0xef) {
-				if (getc(h) == 0xbb && getc(h) == 0xbf) {
-					_setmode(_fileno(h), _O_U8TEXT);//8
+				if (::getc(h) == 0xbb && ::getc(h) == 0xbf) {
+					_wfreopen_s(&h, filename, L"r, ccs=UTF-8", h);
 					return;
 				}
 			} else if (b0 == 0xff) {
-				if (getc(h) == 0xfe) {
-					_setmode(_fileno(h), _O_U16TEXT);//16le
+				if (::getc(h) == 0xfe) {
+					_wfreopen_s(&h, filename, L"r, ccs=UTF-16LE", h);
 					return;
 				}
 			} else if (b0 == 0xfe) {
-				if (getc(h) == 0xff) {
-					_setmode(_fileno(h), _O_U16TEXT);//16be
+				if (::getc(h) == 0xff) {
+					_wfreopen_s(&h, filename, L"r, ccs=UTF-16BE", h);
 					return;
 				}
 			}
 			fseek(h, 0, SEEK_SET);
 		}
 	}
-	~FileReader() { fclose(h); }
+	~FileReader() { if (h) fclose(h); }
 	operator FILE*() const { return h; }
-
+/*
 	int readbuff(void* buffer, size_t size) {
 		return fread(buffer, 1, size, h);
 	}
 	template<typename T> bool get(T &t) {
 		return readbuff(&t, sizeof(T)) == sizeof(T);
 	}
+*/
+	int getc() const {
+		auto c = fgetwc(h);
+        return c == WEOF ? -1 : c;
+	}
+    bool eof() const {
+        return feof(h);
+    }
+
 };
 
 FileWriter	out(stdout);
@@ -366,17 +375,17 @@ static const OPOptions op_options[] = {
 //QUERY,
 {(Option[]){
 	opt_key,
-	{OPT::value,		L"v",     	L"ValueName",	L"Queries for a specific registry key values.\nIf omitted, all values for the key are queried.\nArgument to this switch can be optional only when specified along with /f switch. This specifies to search in valuenames only."},
-	{OPT::def_value|OPT::alternative,	L"ve",    	nullptr,		L"Queries for the default value or empty value name (Default)."},
-	{OPT::all_subkeys,	L"s",     	nullptr,		L"Queries all subkeys and values recursively (like dir /s)."},
-	{OPT::data,			L"f",     	L"Data",		L"Specifies the data or pattern to search for.\nUse double quotes if a string contains spaces. Default is \"*\"."},
-	{OPT::keys_only,	L"k",     	nullptr,		L"Specifies to search in key names only."},
-	{OPT::data_only,	L"d",     	nullptr,		L"Specifies the search in data only."},
-	{OPT::case_sensitive,L"c",     	nullptr,		L"Specifies that the search is case sensitive.\nThe default search is case insensitive."},
-	{OPT::exact,		L"e",     	nullptr,		L"Specifies to return only exact matches.\nBy default all the matches are returned."},
-	{OPT::type,			L"t",     	L"Type",		L"Specifies registry value data type.\nValid types are:\nREG_SZ, REG_MULTI_SZ, REG_EXPAND_SZ, REG_DWORD, REG_QWORD, REG_BINARY, REG_NONE\nDefaults to all types."},
-	{OPT::numeric_type,	L"z",     	nullptr,		L"Verbose: Shows the numeric equivalent for the type of the valuename."},
-	{OPT::separator,	L"se",    	L"Separator",	L"Specifies the separator (length of 1 character only) in data string for REG_MULTI_SZ. Defaults to \"\\0\" as the separator."},
+	{OPT::value,		L"v",	 	L"ValueName",	L"Queries for a specific registry key values.\nIf omitted, all values for the key are queried.\nArgument to this switch can be optional only when specified along with /f switch. This specifies to search in valuenames only."},
+	{OPT::def_value|OPT::alternative,	L"ve",		nullptr,		L"Queries for the default value or empty value name (Default)."},
+	{OPT::all_subkeys,	L"s",	 	nullptr,		L"Queries all subkeys and values recursively (like dir /s)."},
+	{OPT::data,			L"f",	 	L"Data",		L"Specifies the data or pattern to search for.\nUse double quotes if a string contains spaces. Default is \"*\"."},
+	{OPT::keys_only,	L"k",	 	nullptr,		L"Specifies to search in key names only."},
+	{OPT::data_only,	L"d",	 	nullptr,		L"Specifies the search in data only."},
+	{OPT::case_sensitive,L"c",	 	nullptr,		L"Specifies that the search is case sensitive.\nThe default search is case insensitive."},
+	{OPT::exact,		L"e",	 	nullptr,		L"Specifies to return only exact matches.\nBy default all the matches are returned."},
+	{OPT::type,			L"t",	 	L"Type",		L"Specifies registry value data type.\nValid types are:\nREG_SZ, REG_MULTI_SZ, REG_EXPAND_SZ, REG_DWORD, REG_QWORD, REG_BINARY, REG_NONE\nDefaults to all types."},
+	{OPT::numeric_type,	L"z",	 	nullptr,		L"Verbose: Shows the numeric equivalent for the type of the valuename."},
+	{OPT::separator,	L"se",		L"Separator",	L"Specifies the separator (length of 1 character only) in data string for REG_MULTI_SZ. Defaults to \"\\0\" as the separator."},
 	opt_reg32,
 	opt_reg64,
 	opt_end
@@ -385,11 +394,11 @@ static const OPOptions op_options[] = {
 {(Option[]){
 	opt_key,
 	{OPT::value,		L"v",		L"ValueName",	L"The value name, under the selected Key, to add."},
-	{OPT::def_value|OPT::alternative,	L"ve",    	nullptr,		L"adds an empty value name (Default) for the key."},
-	{OPT::type,			L"t",     	L"Type",		L"RegKey data types\n[ REG_SZ | REG_MULTI_SZ | REG_EXPAND_SZ | REG_DWORD | REG_QWORD | REG_BINARY | REG_NONE ]\nIf omitted, REG_SZ is assumed."},
-	{OPT::separator,	L"s",     	L"Separator",	L"Specify one character that you use as the separator in your data string for REG_MULTI_SZ. If omitted, use \"\\0\" as the separator."},
-	{OPT::data,			L"d",     	L"Data",		L"The data to assign to the registry ValueName being added."},
-	{OPT::force,		L"f",     	nullptr,		L"Force overwriting the existing registry entry without prompt."},
+	{OPT::def_value|OPT::alternative,	L"ve",		nullptr,		L"adds an empty value name (Default) for the key."},
+	{OPT::type,			L"t",	 	L"Type",		L"RegKey data types\n[ REG_SZ | REG_MULTI_SZ | REG_EXPAND_SZ | REG_DWORD | REG_QWORD | REG_BINARY | REG_NONE ]\nIf omitted, REG_SZ is assumed."},
+	{OPT::separator,	L"s",	 	L"Separator",	L"Specify one character that you use as the separator in your data string for REG_MULTI_SZ. If omitted, use \"\\0\" as the separator."},
+	{OPT::data,			L"d",	 	L"Data",		L"The data to assign to the registry ValueName being added."},
+	{OPT::force,		L"f",	 	nullptr,		L"Force overwriting the existing registry entry without prompt."},
 	opt_reg32,
 	opt_reg64,
 	opt_end
@@ -398,9 +407,9 @@ static const OPOptions op_options[] = {
 {(Option[]){
 	opt_key,
 	{OPT::value,		L"v",		L"ValueName",	L"The value name, under the selected Key, to delete."},
-	{OPT::def_value|OPT::alternative,	L"ve",    	nullptr,		L"delete the value of empty value name (Default)."},
-	{OPT::all_values|OPT::alternative,	L"va",    	nullptr,		L"delete all values under this key."},
-	{OPT::force,		L"f",     	nullptr,		L"Forces the deletion without prompt."},
+	{OPT::def_value|OPT::alternative,	L"ve",		nullptr,		L"delete the value of empty value name (Default)."},
+	{OPT::all_values|OPT::alternative,	L"va",		nullptr,		L"delete all values under this key."},
+	{OPT::force,		L"f",	 	nullptr,		L"Forces the deletion without prompt."},
 	opt_reg32,
 	opt_reg64,
 	opt_end
@@ -409,7 +418,7 @@ static const OPOptions op_options[] = {
 {(Option[]){
 	opt_key,
 	{OPT::file,			nullptr,	L"FileName",	L"The name of the disk file to export."},
-	{OPT::force,		L"y",     	nullptr,		L"Force overwriting the existing file without prompt."},
+	{OPT::force,		L"y",	 	nullptr,		L"Force overwriting the existing file without prompt."},
 	opt_reg32,
 	opt_reg64,
 	opt_end
@@ -856,7 +865,7 @@ struct Reg {
 
 void Reg::query(const RegKey &r, string keyname, bool printed_key) {
 	auto info 		= r.info();
-	auto tab		= L"    ";
+	auto tab		= L"	";
 	auto space		= (BYTE*)malloc(info.max_data + 1);
 
 	// Enumerate the values
@@ -1057,8 +1066,8 @@ int Reg::doIMPORT() {
 	HKEY	h;
 
 	// Parse key values and subkeys
-	while ((line = win_getline(reader))) {
-		line = line.trim();
+	while (!reader.eof()) {
+        line = win_getline(reader).trim();
 		if (!line.empty() && line[0] != ';') {
 			bool	more = line.back() == '\\';
 			if (more) {
@@ -1160,7 +1169,7 @@ int Reg::doEXPORT() {
 
 	//stream.imbue(std::locale(std::locale(), new std::codecvt_utf16<wchar_t, 0x10ffff, std::little_endian>));
 
-	stream << L'\xfeff';	//BOM
+	//stream << L'\xfeff';	//BOM
 	stream << L"Windows Registry Editor Version 5.00" << endl << endl;
 
 	ParsedKey	parsed(key);

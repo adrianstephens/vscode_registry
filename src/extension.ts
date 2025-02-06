@@ -159,7 +159,6 @@ class RegSearcher implements registry.SearchResults {
 		});
 		this.promise.then(
 			()=> {
-				
 				console.log('search complete');
 				if (!this.cancelled)
 					this.found("finished");
@@ -235,7 +234,7 @@ class RegSearchTextProvider implements vscode.TextDocumentContentProvider {
 
 class RegFS implements vscode.FileSystemProvider {
 	private _onDidChangeFile = new vscode.EventEmitter<vscode.FileChangeEvent[]>();
-	readonly onDidChangeFile: vscode.Event<vscode.FileChangeEvent[]> = this._onDidChangeFile.event;
+	get onDidChangeFile() { return this._onDidChangeFile.event; }
 
 	constructor(public view: RegEditProvider) {}
 

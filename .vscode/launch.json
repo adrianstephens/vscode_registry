@@ -25,7 +25,7 @@
             "request": "launch",
             "program": "${workspaceFolder}/reg/reg.exe",
             "args": [
-				"query", "HKLM", "/s", "/k", "/f", "Microsoft SDKs", "/reg:32",
+                "IMPORT", "C:\\Users\\adrian\\AppData\\Local\\Temp\\temp.reg"
 			],
             "cwd": "${workspaceFolder}",
 			"sourceFileMap": {

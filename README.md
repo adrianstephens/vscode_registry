@@ -1,10 +1,8 @@
-"😀"
-<span data-index="1"></span>
 # Visual Studio Code Registry Editor
 
 This extension adds a registry editor to the explorer, and general support for .reg files.
 
-![Main window screenshot](assets/readme.png)
+![Main window screenshot](https://raw.githubusercontent.com/adrianstephens/vscode_registry/main/assets/readme.png)
 
 
 Keys and Values have context menus allowing deletion, renaming, etc.

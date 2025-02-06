@@ -3,7 +3,7 @@
 	"displayName": "Registry Editor",
 	"description": "A Registry Editor for VSCode",
 	"icon": "assets/icon.png",
-	"version": "0.6.0",
+	"version": "0.6.1",
 	"publisher": "isopodlabs",
 	"repository": "https://github.com/adrianstephens/vscode_registry",
 	"engines": {
@@ -19,9 +19,9 @@
 		"onFileSystem:reg"
 	],
 	"files": [
-		"out/*",
-		"assets/*",
-		"!assets/*.psd",
+		"out/*.js",
+		"assets/Registry.svg",
+		"assets/icon.png",
 		"language/*",
 		"reg/reg.cpp",
 		"reg/reg.exe",
@@ -121,6 +121,7 @@
 			{
 				"command": "regedit.edit",
 				"title": "Edit",
+				"icon": "$(edit)",
 				"category": "RegEdit"
 			},
 			{
@@ -136,6 +137,7 @@
 			{
 				"command": "regedit.addhost",
 				"title": "Add remote machine...",
+				"icon": "$(add)",
 				"category": "RegEdit"
 			},
 			{
@@ -152,6 +154,7 @@
 			{
 				"command": "regedit.find",
 				"title": "Find in Key...",
+				"icon": "$(search)",
 				"category": "RegEdit"
 			}
 		],
@@ -246,6 +249,37 @@
 					"command": "regedit.find",
 					"when": "view == regedit-view && (viewItem == 'key' || viewItem == 'keyWithSearch')",
 					"group": "find"
+				},
+				{
+					"command": "regedit.delete",
+					"when": "view == regedit-view",
+					"group": "inline"
+				},
+				{
+					"command": "regedit.edit",
+					"when": "view == regedit-view && viewItem != 'host'",
+					"group": "inline"
+				},
+				{
+					"command": "regedit.copy",
+					"when": "view == regedit-view && viewItem != 'host'",
+					"alt": "regedit.copy_strict",
+					"group": "inline"
+				},
+				{
+					"command": "regedit.setValue",
+					"when": "view == regedit-view && (viewItem == 'key' || viewItem == 'keyWithSearch')",
+					"group": "inline"
+				},
+				{
+					"command": "regedit.createKey",
+					"when": "view == regedit-view && (viewItem == 'key' || viewItem == 'keyWithSearch')",
+					"group": "inline"
+				},
+				{
+					"command": "regedit.find",
+					"when": "view == regedit-view && (viewItem == 'key' || viewItem == 'keyWithSearch')",
+					"group": "inline"
 				}
 			],
 			"editor/context": [
