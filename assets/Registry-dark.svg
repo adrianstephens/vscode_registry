@@ -1,0 +1,117 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<svg viewBox="0 0 64 68.7873" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+        <path id="path1" d="m 0,0 v 10.583333 l -7.9375,-2.645834 v -10.583334 Z" />
+        <path id="path2" d="m 0,0 v 10.583333 l  7.9375,-2.645834 v -10.583334 Z" />
+        <path id="path4" d="m 0,0 -7.9375,-2.645833 7.9375,-2.645834 7.9375,2.645834 Z" />
+        <clipPath id="clip1"><use href="#path1" /></clipPath>
+        <clipPath id="clip2"><use href="#path2" /></clipPath>
+        <clipPath id="clip4"><use href="#path4" /></clipPath>
+
+        <g id="solid" fill="black" stroke="none">
+            <use href="#path1"/>
+            <use href="#path2"/>
+            <use href="#path4"/>
+        </g>
+
+        <g id="cube">
+            <use href="#path1" stroke="#eee" fill="none" clip-path="url(#clip1)"/>
+            <use href="#path2" stroke="none" fill="#eee"/>
+            <use href="#path4" stroke="#eee" fill="none" clip-path="url(#clip4)"/>
+        </g>
+
+        <mask id="mask_rd">
+            <rect x="-8" y="-8" width="16" height="20" fill="white"/>
+            <use href="#solid" transform="translate(9.260416,3.175)"/>
+        </mask>
+
+        <mask id="mask_ld">
+            <rect x="-8" y="-8" width="16" height="20" fill="white"/>
+            <use href="#solid" transform="translate(-9.260416,3.175)"/>
+        </mask>
+
+        <mask id="mask_d">
+            <rect x="-8" y="-8" width="16" height="20" fill="white"/>
+            <use href="#solid" transform="translate(+9.260416,3.175)"/>
+            <use href="#solid" transform="translate(-9.260416,3.175)"/>
+        </mask>
+
+        <mask id="mask_a">
+            <rect x="-8" y="-8" width="16" height="20" fill="white"/>
+            <use href="#solid" transform="translate(0,-11.90625)"/>
+        </mask>
+
+        <mask id="mask_lda">
+            <rect x="-8" y="-8" width="16" height="20" fill="white"/>
+            <use href="#solid" transform="translate(-9.260416,3.175)"/>
+            <use href="#solid" transform="translate(0,-11.90625)"/>
+        </mask>
+        <mask id="mask_rda">
+            <rect x="-8" y="-8" width="16" height="20" fill="white"/>
+            <use href="#solid" transform="translate(9.260416,3.175)"/>
+            <use href="#solid" transform="translate(0,-11.90625)"/>
+        </mask>
+        <mask id="mask_da">
+            <rect x="-8" y="-8" width="16" height="20" fill="white"/>
+            <use href="#solid" transform="translate(+9.260416,3.175)"/>
+            <use href="#solid" transform="translate(-9.260416,3.175)"/>
+            <use href="#solid" transform="translate(0,+6.35)"/>
+            <use href="#solid" transform="translate(0,-11.90625)"/>
+        </mask>
+
+        <mask id="mask_da2">
+            <rect x="-8" y="-8" width="16" height="20" fill="white"/>
+            <use href="#solid" transform="translate(+9.260416,3.175)"/>
+            <use href="#solid" transform="translate(-9.260416,3.175)"/>
+            <use href="#solid" transform="translate(0,-11.90625)"/>
+            <use href="#solid" transform="translate(0,+6.35)"/>
+            <use href="#solid" transform="translate(+9.260416,-8.73125)"/>
+            <use href="#solid" transform="translate(-9.260416,-8.73125)"/>
+        </mask>
+
+        <mask id="mask_da1">
+            <rect x="-8" y="-8" width="16" height="20" fill="white"/>
+            <use href="#solid" transform="translate(+9.260416,3.175)"/>
+            <use href="#solid" transform="translate(-9.260416,3.175)"/>
+            <use href="#solid" transform="translate(0,-11.90625)"/>
+            <use href="#solid" transform="translate(-9.260416,-8.73125)"/>
+        </mask>
+
+        <mask id="mask_da3">
+            <rect x="-8" y="-8" width="16" height="20" fill="white"/>
+            <use href="#solid" transform="translate(+9.260416,3.175)"/>
+            <use href="#solid" transform="translate(-9.260416,3.175)"/>
+            <use href="#solid" transform="translate(0,-11.90625)"/>
+        </mask>
+
+    </defs>
+    <g>
+        <!--bottom layer-->
+        <use href="#cube" transform="translate(17.197916,48.67897)" mask="url(#mask_da2)"/>
+        <use href="#cube" transform="translate(26.458333,51.85397)" mask="url(#mask_da)"/>
+        <use href="#cube" transform="translate(35.71875,48.67897)" mask="url(#mask_da2)"/>
+
+        <use href="#cube" transform="translate(7.9375,51.85397)" mask="url(#mask_rda)"/>
+        <use href="#cube" transform="translate(17.197916,55.028969)" mask="url(#mask_rd)"/>
+        <use href="#cube" transform="translate(26.458332,58.20397)" />
+        <use href="#cube" transform="translate(35.71875,55.02897)" mask="url(#mask_ld)" />
+        <use href="#cube" transform="translate(44.979166,51.85397)" mask="url(#mask_lda)" />
+        
+        <!--middle layer-->
+        <use href="#cube" transform="translate(26.458332,33.59772)" mask="url(#mask_da2)"/>
+        <use href="#cube" transform="translate(35.71875,36.77272)" mask="url(#mask_da3)"/>
+        <use href="#cube" transform="translate(44.979166,39.94772)" />
+        <use href="#cube" transform="translate(17.197916,36.77272)" mask="url(#mask_da1)"/>
+        <use href="#cube" transform="translate(26.458333,39.94772)" />
+        <use href="#cube" transform="translate(7.9375,39.94772)" mask="url(#mask_a)" />/>
+        
+        <!--top layer-->
+        <use href="#cube" transform="translate(26.458332,21.69147)" mask="url(#mask_d)"/>
+        <use href="#cube" transform="translate(35.71875,24.86647)" />
+        <use href="#cube" transform="translate(17.197916,24.86647)" mask="url(#mask_ld)"/>
+        <use href="#cube" transform="translate(7.9375,28.041469)" />
+
+        <use href="#cube" transform="translate(55.7,24) rotate(19.792232)" />
+		<use href="#cube" transform="translate(40,7) rotate(36.817421)" />
+    </g>
+</svg>

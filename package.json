@@ -3,7 +3,7 @@
 	"displayName": "Registry Editor",
 	"description": "A Registry Editor for VSCode",
 	"icon": "assets/icon.png",
-	"version": "0.6.1",
+	"version": "0.6.2",
 	"publisher": "isopodlabs",
 	"repository": "https://github.com/adrianstephens/vscode_registry",
 	"engines": {
@@ -21,6 +21,7 @@
 	"files": [
 		"out/*.js",
 		"assets/Registry.svg",
+		"assets/Registry-dark.svg",
 		"assets/icon.png",
 		"language/*",
 		"reg/reg.cpp",
@@ -57,7 +58,11 @@
 					".reg",
 					".REG"
 				],
-				"configuration": "./language//language-configuration.json"
+				"configuration": "./language//language-configuration.json",
+				"icon": {
+					"light": "assets/Registry.svg",
+					"dark": "assets/Registry-dark.svg"
+				}
 			}
 		],
 		"grammars": [
