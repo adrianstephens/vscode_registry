@@ -106,6 +106,14 @@ struct FileReader {
 
 FileWriter	out(stdout);
 
+void waitDebugger() {
+	bool forever = true;
+	while (forever) {
+		out << L"waiting for attach..." << endl;
+		Sleep(1000);
+	}
+}
+
 //-----------------------------------------------------------------------------
 // base
 //-----------------------------------------------------------------------------
@@ -335,6 +343,7 @@ enum class OPT : uint8_t {
 	type,
 	data,
 	separator,
+	machine,
 
 //bool options
 	all_subkeys	= 0,
@@ -425,7 +434,8 @@ static const OPOptions op_options[] = {
 }},
 //IMPORT
 {(Option[]){
-	{OPT::file,			nullptr, 	L"FileName",	L"The name of the disk file to import (local machine only)."},
+	{OPT::file,			nullptr, 	L"FileName",	L"The name of the disk file to import."},
+	{OPT::machine,		L"machine",	L"Machine",	    L"The name of the machine to import to."},
 	opt_reg32,
 	opt_reg64,
 	opt_end
@@ -528,7 +538,7 @@ size_t parse_command_data(wchar_t *data, TYPE type, char separator) {
 		case TYPE::SZ:
 		case TYPE::EXPAND_SZ:
 		case TYPE::MULTI_SZ:
-			return unescape(data, data, separator);
+			return unescape(data, data, separator) * 2 + 2;
 
 		case TYPE::DWORD:
 			*(DWORD*)data = wcstol(data, nullptr, 10);
@@ -796,9 +806,9 @@ struct ParsedKey {
 
 struct Reg {
 	union {
-		wchar_t *string_args[6] = {nullptr};
+		wchar_t *string_args[7] = {nullptr};
 		struct {
-			wchar_t *key, *value, *file, *type, *data, *sep;
+			wchar_t *key, *value, *file, *type, *data, *sep, *machine;
 		};
 	};
 
@@ -980,6 +990,8 @@ int Reg::doQUERY() {
 //-----------------------------------------------------------------------------
 
 int Reg::doADD() {
+    //waitDebugger();
+
 	ParsedKey	parsed(key);
 	auto 		access = KEY_ALL_ACCESS | get_sam();
 	HKEY		h;
@@ -1072,7 +1084,7 @@ int Reg::doIMPORT() {
 			bool	more = line.back() == '\\';
 			if (more) {
 				line.pop_back();
-				for (StringBuilder	b(line); more;) {
+				for (StringBuilder b(line); more;) {
 					auto line2 = win_getline(reader);
 					more = line2.back() == '\\';
 					if (more)
@@ -1086,6 +1098,7 @@ int Reg::doIMPORT() {
 				auto	open	= 1 + deleted;
 				auto	close	= line.find_first(']');
 				ParsedKey	parsed(string::view(line.begin() + open, close));
+                parsed.host = string(machine);
 
 				if (deleted) {
 					if (auto ret = parsed.delete_key(access))
@@ -1253,13 +1266,7 @@ void print_options(OP op) {
 int wmain(int argc, wchar_t* argv[]) {
 	_setmode(_fileno(stdout), _O_U8TEXT);
 
-#if 0
-	bool forever = true;
-	while (forever) {
-		out << L"waiting for attach..." << endl;
-		Sleep(1000);
-	}
-#endif
+    //waitDebugger();
 
 	if (argc < 2) {
 		out << L"** NOTE: this is an unofficial replacement for REG **" << endl << endl

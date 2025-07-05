@@ -48,7 +48,7 @@ async function rename(key: registry.Key, newName: string, value?: string) : Prom
 				text = text.slice(0, a) + newName + text.slice(b) + '[-' + text.slice(m.indices[0][0] + 1, b + 2);
 
 				await vscode.workspace.fs.writeFile(Uri.file(file),  Buffer.from(text, 'utf8'));
-				await registry.importReg(file, key.getView(), [key]);
+				await registry.importReg(file, key.getHost(), key.getView(), [key]);
 				await vscode.workspace.fs.delete(Uri.file(file));
 
 				return true;
@@ -140,6 +140,27 @@ class WatchForClose {
 //	TextDocumentContentProvider
 //-----------------------------------------------------------------------------
 
+function uri_to_key(uri: Uri) {
+	const keypath = uri.path.slice(1).replace(/\//g, '\\');
+	return uri.authority ? `\\\\${uri.authority}\\${keypath}` : keypath;
+}
+
+function key_to_uri(keypath: string, scheme: string = 'reg', query: string = '', fragment: string = ''): vscode.Uri {
+	const path = keypath.replace(/\\/g, '/');
+	if (path.startsWith('//')) {
+		return vscode.Uri.from({
+			scheme,
+			authority: path.substring(2).split('/')[0],
+			path: path.substring(path.indexOf('/', 2)),
+			query, fragment
+		});
+	}
+	return vscode.Uri.from({scheme,
+		path: path[0] === '/' ? path : '/' + path,
+		query, fragment
+	});
+}
+
 class RegSearcher implements registry.SearchResults {
 	private pending: string[] = [];
 	private timeout: NodeJS.Timeout | undefined;
@@ -150,7 +171,7 @@ class RegSearcher implements registry.SearchResults {
 
 	constructor(public uri: vscode.Uri, public onChange: vscode.EventEmitter<vscode.Uri>) {
 		const enable = +uri.fragment;
-		this.promise = registry.getKey(uri.path.replace(/\//g, '\\')).search(uri.query, this, {
+		this.promise = registry.getKey(uri_to_key(uri)).search(uri.query, this, {
 			keys: 			(enable & 1) !== 0,
 			values: 		(enable & 2) !== 0,
 			data:   		(enable & 4) !== 0,
@@ -238,14 +259,14 @@ class RegFS implements vscode.FileSystemProvider {
 
 	constructor(public view: RegEditProvider) {}
 
+	public static uri_to_key(uri: Uri) {
+		return uri_to_key(uri).slice(0, -4);
+	}
 	public static key_to_uri(keypath: string) {
-		return Uri.parse(`reg:/${keypath.replace(/\\/g,'/')}.reg`);
+		return key_to_uri(`${keypath}.reg`, 'reg');
 	}
 	public static value_to_uri(keypath: string, name:string, type:string) {
-		return Uri.parse(`reg:/${keypath.replace(/\\/g,'/')}/${name}?type=${type}`);
-	}
-	public static uri_to_key(uri: Uri) {
-		return uri.path.slice(1, -4).replace(/\//g, '\\');
+		return key_to_uri(`${keypath}/${name}`, 'reg', `type=${type}`);
 	}
 
 	async stat(uri: Uri): Promise<vscode.FileStat> {
@@ -265,7 +286,7 @@ class RegFS implements vscode.FileSystemProvider {
 	async writeFile(uri: Uri, content: Uint8Array, options: { create: boolean, overwrite: boolean }): Promise<void> {
 		const file = path.join(os.tmpdir(), 'temp.reg');
 		await vscode.workspace.fs.writeFile(Uri.file(file),content);
-		registry.importReg(file).then(() => {
+		registry.importReg(file, uri.authority).then(() => {
 			this.view.recreate();
 			this._onDidChangeFile.fire([{ type: vscode.FileChangeType.Changed, uri }]);
 		}).catch(err => vscode.window.showErrorMessage(`${err}`));
@@ -373,17 +394,17 @@ class HostTreeItem extends TreeItem {
 		const children : TreeItem[] = [];
 		if (this.host) {
 			for (const h of registry.REMOTE_HIVES)
-				children.push(new KeyTreeItem(null, registry.getKey(`\\\\${this.host}\\${h}`)));
+				children.push(new KeyTreeItem(this, registry.getKey(`\\\\${this.host}\\${h}`)));
 		} else {
 			for (const h of registry.HIVES)
-				children.push(new KeyTreeItem(null, registry.getKey(h)));
+				children.push(new KeyTreeItem(this, registry.getKey(h)));
 		}
 		return children;
 	}
 }
 
 class RegEditProvider implements vscode.TreeDataProvider<TreeItem>, vscode.FileDecorationProvider {
-	private hosts: 		string[]	= [];
+	public	hosts: 		string[]	= [];
 	private children: 	TreeItem[]	= [];
 	public	selection:	TreeItem[]	= [];
 
@@ -453,16 +474,24 @@ class RegEditProvider implements vscode.TreeDataProvider<TreeItem>, vscode.FileD
 		return node;
 	}
 
-	public async getKeyItemCreate(key: registry.Key|string): Promise<KeyTreeItem | undefined> {
+	private async getKeyItemCreate(key: registry.Key|string, host: string): Promise<KeyTreeItem | undefined> {
 		if (typeof key !== 'string')
 			key = key.path;
-		let node: KeyTreeItem | undefined;
-		for (const i of key.split('\\')) {
+		let node: TreeItem | undefined;
+
+		if (this.hosts.length) {
 			const children = await this.getChildren(node);
-			if (!children || !(node = children.find(j => (j instanceof KeyTreeItem) && j.label == i) as KeyTreeItem | undefined))
+			host ||= 'Local';
+			node = children.find(j => j.label == host);
+			if (!node)
 				return;
 		}
-		return node;
+		for (const i of key.split('\\')) {
+			const children = await this.getChildren(node);
+			if (!children || !(node = children.find(j => (j instanceof KeyTreeItem) && j.label == i)))
+				return;
+		}
+		return node as KeyTreeItem;
 	}
 
 	provideFileDecoration(uri: Uri, token: vscode.CancellationToken): vscode.ProviderResult<vscode.FileDecoration> {
@@ -489,14 +518,14 @@ class RegEditProvider implements vscode.TreeDataProvider<TreeItem>, vscode.FileD
 			this.recreate();
 		}
 	}
-	async selectKey(key: string) {
-		const item = await this.getKeyItemCreate(key);
+	async selectKey(key: string, host: string = '') {
+		const item = await this.getKeyItemCreate(key, host);
 		if (item)
 			this.getTreeView().reveal(item);
 	}
-	
-	async selectValue(key: string, value: string) {
-		const item = await this.getKeyItemCreate(key);
+
+	async selectValue(key: string, value: string, host: string = '') {
+		const item = await this.getKeyItemCreate(key, host);
 		for (const child of await this.getChildren(item)) {
 			if (child instanceof ValueTreeItem && child.name == value) {
 				this.getTreeView().reveal(child);
@@ -654,41 +683,41 @@ function copy(item: TreeItem, strict: boolean) {
 	}
 }
 
+async function try_reg(func: () => Promise<void>) {
+	try {
+		await func();
+	} catch (err) {
+		vscode.window.showErrorMessage(`${err}`);
+	}
+}
+
+
 let selected: TreeItem;
 
 export function activate(context: vscode.ExtensionContext) {
 
-	function registerCommand(command: string, callback: (...args: any[]) => any, thisArg?: any) {
-		context.subscriptions.push(vscode.commands.registerCommand(command, callback));
-	}
-	function registerTextEditorCommand(command: string, callback: (textEditor: vscode.TextEditor, edit: vscode.TextEditorEdit, ...args: any[]) => void, thisArg?: any) {
-		context.subscriptions.push(vscode.commands.registerTextEditorCommand(command, callback));
+	function processSettings(config: vscode.WorkspaceConfiguration) {
+		registry.setExecutable(config.get<boolean>('useCustomReg')
+			? config.get<string>('regExecutable') || context.asAbsolutePath("reg\\reg.exe")
+			: undefined
+		);
 	}
 
-	async function try_reg(func: () => Promise<void>) {
-		try {
-			await func();
-		} catch (err) {
-			vscode.window.showErrorMessage(`${err}`);
-		}
+	function saveRemotes() {
+		context.workspaceState.update('regedit.remotes', regedit.hosts);
 	}
 
 	//settings
 	const config = vscode.workspace.getConfiguration('regedit');
-	if (!config.get<string>('regExecutable'))
-		config.update('regExecutable', context.asAbsolutePath("reg\\reg.exe"), vscode.ConfigurationTarget.Global);
-
-	function get_settings() {
-		const config = vscode.workspace.getConfiguration('regedit');
-		registry.setExecutable(config.get<boolean>('useCustomReg') ? config.get<string>('regExecutable') : undefined);
-	}
-	get_settings();
+	processSettings(config);
 	context.subscriptions.push(vscode.workspace.onDidChangeConfiguration(event => {
 		if (event.affectsConfiguration('regedit'))
-			get_settings();
+			processSettings(vscode.workspace.getConfiguration('regedit'));
 	}));
 
 	const regedit = new RegEditProvider;
+	if (config.get<boolean>('reopenRemotes'))
+		regedit.hosts = context.workspaceState.get('regedit.remotes') ?? [];
 
 	//regsearch provider
 	const searchTextProvider = new RegSearchTextProvider;
@@ -698,353 +727,360 @@ export function activate(context: vscode.ExtensionContext) {
 	//	if (e.uri.scheme === 'regsearch')
 	//		searchTextProvider.close(e.uri);
 	//}));
-  
-	//folding
-	context.subscriptions.push(vscode.languages.registerFoldingRangeProvider('reg', new RegFolding));
 
 	//diagnostics
 	const diagnostics = vscode.languages.createDiagnosticCollection('reg');
-	context.subscriptions.push(diagnostics);
-
 	const doc = vscode.window.activeTextEditor?.document;
 	if (doc?.languageId === 'reg')
 		diagnostics.set(doc.uri, regDiagnostics(doc));
 
-	context.subscriptions.push(vscode.window.onDidChangeActiveTextEditor(e => {
-		if (e && e.document.languageId == 'reg')
-			diagnostics.set(e.document.uri, regDiagnostics(e.document));
-	}));
-	context.subscriptions.push(vscode.workspace.onDidChangeTextDocument(e => {
-		if (e && e.document.languageId == 'reg')
-			diagnostics.set(e.document.uri, regDiagnostics(e.document));
-	}));
-	context.subscriptions.push(vscode.workspace.onDidCloseTextDocument(doc => diagnostics.delete(doc.uri)));
-  
-	//commands
-	registerCommand("regedit.select", async (item: TreeItem) => {
-		selected = item;
-	});
+	let prevSearchFlags = 7;
+	let prevSearchText = '';
 
-	registerCommand("regedit.refresh", async () => {
-		registry.reset();
-		regedit?.recreate();
-	});
+	//SUBSCRIPTIONS
 
-	registerCommand("regedit.addhost", async () => {
-		const host = await vscode.window.showInputBox({prompt: 'Enter the host name'});
-		if (host)
-			regedit?.addHost(host);
-	});
+	context.subscriptions.push(
+		vscode.languages.registerFoldingRangeProvider('reg', new RegFolding),
+		diagnostics,
 
-	registerCommand("regedit.edit",	async (item?: TreeItem, data?: string) => {
-		if (item instanceof ValueTreeItem) {
-			const old_data = item.data;
-			if (!data) {
-				data = await vscode.window.showInputBox({prompt: 'Enter the new value', value: old_data.value.toString()});
-				if (!data)
-					return;
+		vscode.window.onDidChangeActiveTextEditor(e => {
+			if (e && e.document.languageId == 'reg')
+				diagnostics.set(e.document.uri, regDiagnostics(e.document));
+		}),
+
+		vscode.workspace.onDidChangeTextDocument(e => {
+			if (e && e.document.languageId == 'reg')
+				diagnostics.set(e.document.uri, regDiagnostics(e.document));
+		}),
+
+		vscode.workspace.onDidCloseTextDocument(doc => diagnostics.delete(doc.uri)),
+
+		vscode.commands.registerCommand("regedit.select", (item: TreeItem) => {
+			selected = item;
+		}),
+
+		vscode.commands.registerCommand("regedit.refresh", () => {
+			registry.reset();
+			regedit?.recreate();
+		}),
+
+		vscode.commands.registerCommand("regedit.addhost", async () => {
+			const host = await vscode.window.showInputBox({prompt: 'Enter the host name'});
+			if (host) {
+				regedit?.addHost(host);
+				saveRemotes();
 			}
-			const parent	= item.parent as KeyTreeItem;
-			const data2		= old_data.constructor as registry.Type;
+		}),
+
+		vscode.commands.registerCommand("regedit.edit",	async (item?: TreeItem, data?: string) => {
+			if (item instanceof ValueTreeItem) {
+				const old_data = item.data;
+				if (!data) {
+					data = await vscode.window.showInputBox({prompt: 'Enter the new value', value: old_data.value.toString()});
+					if (!data)
+						return;
+				}
+				const parent	= item.parent as KeyTreeItem;
+				const data2		= old_data.constructor as registry.Type;
+				
+				try_reg(async () => {
+					await parent.key.setValue(item.name, data2.parse(data!));
+					regedit?.recreate(parent);
+				});
+
+			} else if (item instanceof KeyTreeItem) {
+				const document = await vscode.workspace.openTextDocument(RegFS.key_to_uri(item.key.path));
+				await vscode.window.showTextDocument(document, {viewColumn: vscode.ViewColumn.Active});
+			}
+		}),
 			
-			try_reg(() => parent.key.setValue(item.name, data2.parse(data!)).then(() => regedit?.recreate(parent)));
+		vscode.commands.registerCommand("regedit.createKey", async (item: string|TreeItem, name?: string) => {
+			if (typeof(item) == 'string')
+				return registry.getKey(item).create();
 
-		} else if (item instanceof KeyTreeItem) {
-			const document = await vscode.workspace.openTextDocument(RegFS.key_to_uri(item.key.path));
-			await vscode.window.showTextDocument(document, {viewColumn: vscode.ViewColumn.Active});
-		}
-	});
-		
-	registerCommand("regedit.createKey", async (item: string|TreeItem, name?: string) => {
-		if (typeof(item) == 'string')
-			return registry.getKey(item).create();
+			if (item instanceof KeyTreeItem) {
+				if (!name) {
+					name = await vscode.window.showInputBox({prompt: 'Enter the name of the new Key'});
+					if (!name)
+						return;
+				}
 
-		if (item instanceof KeyTreeItem) {
+				try_reg(async () => {
+					await item.key.subkey(name!).create();
+					regedit?.recreate(item);
+				});
+			}
+		}),
+
+		vscode.commands.registerCommand("regedit.setValue",	async (item: string|TreeItem, name?: string, stype?: string, data?:string) => {
 			if (!name) {
-				name = await vscode.window.showInputBox({prompt: 'Enter the name of the new Key'});
+				name = await vscode.window.showInputBox({prompt: 'Enter the name of the new Value'});
 				if (!name)
 					return;
 			}
 
-			try_reg(async () => {
-				await item.key.subkey(name!).create();
-				regedit?.recreate(item);
-			});
-		}
-	});
-
-	registerCommand("regedit.setValue",	async (item: string|TreeItem, name?: string, stype?: string, data?:string) => {
-		if (!name) {
-			name = await vscode.window.showInputBox({prompt: 'Enter the name of the new Value'});
-			if (!name)
-				return;
-		}
-
-		if (!stype) {
-			const items = [
-				{ label: 'REG_SZ'			},
-				{ label: 'REG_MULTI_SZ'		},
-				{ label: 'REG_EXPAND_SZ'	},
-				{ label: 'REG_DWORD'		},
-				{ label: 'REG_QWORD'		},
-				{ label: 'REG_BINARY'		},
-				{ label: 'REG_NONE'			},
-			];
-			
-			const selectedItem = await vscode.window.showQuickPick(items, {placeHolder: 'Select the value type'});
-			if (!selectedItem)
-				return;
-			stype = selectedItem.label;
-		}
-
-		const type = stype ? registry.string_to_type(stype) : registry.TYPES.SZ;
-		if (!type)
-			return;
-
-		if (!data) {
-			switch (stype) {
-				case 'REG_EXPAND_SZ':
-				case 'REG_SZ':			data = '<new>'; break;
-				case 'REG_MULTI_SZ':	data = '<new>\\0<new>'; break;
-				case 'REG_DWORD':
-				case 'REG_QWORD':
-				case 'REG_BINARY':		data = '0'; break;
-				default:				break;
+			if (!stype) {
+				const items = [
+					{ label: 'REG_SZ'			},
+					{ label: 'REG_MULTI_SZ'		},
+					{ label: 'REG_EXPAND_SZ'	},
+					{ label: 'REG_DWORD'		},
+					{ label: 'REG_QWORD'		},
+					{ label: 'REG_BINARY'		},
+					{ label: 'REG_NONE'			},
+				];
+				
+				const selectedItem = await vscode.window.showQuickPick(items, {placeHolder: 'Select the value type'});
+				if (!selectedItem)
+					return;
+				stype = selectedItem.label;
 			}
 
-			data = await vscode.window.showInputBox({prompt: 'Enter the initial value', value: data});
-			if (!data)
+			const type = stype ? registry.string_to_type(stype) : registry.TYPES.SZ;
+			if (!type)
 				return;
-		}
 
-		const key = typeof(item) == 'string' ? registry.getKey(item) : item instanceof KeyTreeItem ? item.key : undefined;
-		if (key) {
-			try_reg(async () => {
-				await key.setValue(name, type.parse(data));
-				if (item instanceof KeyTreeItem)
-					regedit.recreate(item);
-			});
-		}
-	});
+			if (!data) {
+				switch (stype) {
+					case 'REG_EXPAND_SZ':
+					case 'REG_SZ':			data = '<new>'; break;
+					case 'REG_MULTI_SZ':	data = '<new>\\0<new>'; break;
+					case 'REG_DWORD':
+					case 'REG_QWORD':
+					case 'REG_BINARY':		data = '0'; break;
+					default:				break;
+				}
 
-	registerCommand("regedit.delete", async (item: string|TreeItem) => {
-		if (!item)
-			item = selected;
+				data = await vscode.window.showInputBox({prompt: 'Enter the initial value', value: data});
+				if (!data)
+					return;
+			}
 
-		if (typeof(item) == 'string') {
-			const split = item.lastIndexOf('\\');
-			const key	= await registry.getKey(item.substring(0, split));
-			const name	= item.substring(split + 1);
-			if (name in key)
-				delete key[name];
-			else
-				key.deleteValue(name);
-			
-		} else if (item instanceof HostTreeItem) {
-			regedit.removeHost(item.host);
-
-		} else if (item instanceof KeyTreeItem) {
-			if (await yesno(`Are you sure you want to delete [${item.key.path}]?`)) {
-				const parent	= item.parent as KeyTreeItem;
+			const key = typeof(item) == 'string' ? registry.getKey(item) : item instanceof KeyTreeItem ? item.key : undefined;
+			if (key) {
 				try_reg(async () => {
-					await item.key.destroy();
-					regedit.recreate(parent);
+					await key.setValue(name, type.parse(data));
+					if (item instanceof KeyTreeItem)
+						regedit.recreate(item);
 				});
 			}
+		}),
 
-		} else if (item instanceof ValueTreeItem) {
-			const parent	= item.parent as KeyTreeItem;
-			if (await yesno(`Are you sure you want to delete '${item.name}' from [${parent.key.path}]?`)) {
-				try_reg(async () => {
-					await parent.key.deleteValue(item.name);
-					regedit.recreate(parent);
-				});
-			}
-		}
-	});
+		vscode.commands.registerCommand("regedit.delete", async (item: string|TreeItem) => {
+			if (!item)
+				item = selected;
 
-	registerCommand("regedit.rename", async (item: string|TreeItem, newname?: string) => {
-		let key:	registry.Key;
-		let name:	string;
-		let value:	string = '';
-		let parent:	KeyTreeItem | undefined;
+			if (typeof(item) == 'string') {
+				const split = item.lastIndexOf('\\');
+				const key	= await registry.getKey(item.substring(0, split));
+				const name	= item.substring(split + 1);
+				if (name in key)
+					delete key[name];
+				else
+					key.deleteValue(name);
+				
+			} else if (item instanceof HostTreeItem) {
+				regedit.removeHost(item.host);
+				saveRemotes();
 
-		if (typeof(item) == 'string') {
-			const split = item.lastIndexOf('\\');
-			key		= await registry.getKey(item.substring(0, split));
-			name	= item.substring(split + 1);
-			if (name in key) {
-				key		= key[value];
-				value	= '';
-			} else {
-				value	= name;
-			}
-			parent = regedit?.getKeyItem(key);
+			} else if (item instanceof KeyTreeItem) {
+				if (await yesno(`Are you sure you want to delete [${item.key.path}]?`)) {
+					const parent	= item.parent as KeyTreeItem;
+					try_reg(async () => {
+						await item.key.destroy();
+						regedit.recreate(parent);
+					});
+				}
 
-		} else {
-			parent	= item?.parent as KeyTreeItem;
-			if (item instanceof KeyTreeItem) {
-				key 	= await item.key;
-				name 	= key.name;
 			} else if (item instanceof ValueTreeItem) {
-				key 	= await parent.key;
-				name	= item.name as string;
-				value	= name;
-			} else {
-				return;
+				const parent	= item.parent as KeyTreeItem;
+				if (await yesno(`Are you sure you want to delete '${item.name}' from [${parent.key.path}]?`)) {
+					try_reg(async () => {
+						await parent.key.deleteValue(item.name);
+						regedit.recreate(parent);
+					});
+				}
 			}
-		}
+		}),
 
-		if (!newname) {
-			newname = await vscode.window.showInputBox({
-				value: name,
-				prompt: 'Enter the new name',
-			});
-			if (!newname)
-				return;
-		}
+		vscode.commands.registerCommand("regedit.rename", async (item: string|TreeItem, newname?: string) => {
+			let key:	registry.Key;
+			let name:	string;
+			let value:	string = '';
+			let parent:	KeyTreeItem | undefined;
 
-		await rename(key, newname, value).then(() => regedit?.recreate(parent));		
-	});
+			if (typeof(item) == 'string') {
+				const split = item.lastIndexOf('\\');
+				key		= await registry.getKey(item.substring(0, split));
+				name	= item.substring(split + 1);
+				if (name in key) {
+					key		= key[value];
+					value	= '';
+				} else {
+					value	= name;
+				}
+				parent = regedit?.getKeyItem(key);
 
-	registerCommand("regedit.export", async (item: string|TreeItem, file?: string) => {
-		const key	= typeof(item) == 'string'		? registry.getKey(item)
-					: item instanceof KeyTreeItem	? item.key
-					: undefined;
-		if (key) {
+			} else {
+				parent	= item?.parent as KeyTreeItem;
+				if (item instanceof KeyTreeItem) {
+					key 	= await item.key;
+					name 	= key.name;
+				} else if (item instanceof ValueTreeItem) {
+					key 	= await parent.key;
+					name	= item.name as string;
+					value	= name;
+				} else {
+					return;
+				}
+			}
+
+			if (!newname) {
+				newname = await vscode.window.showInputBox({
+					value: name,
+					prompt: 'Enter the new name',
+				});
+				if (!newname)
+					return;
+			}
+
+			await rename(key, newname, value).then(() => regedit?.recreate(parent));		
+		}),
+
+		vscode.commands.registerCommand("regedit.export", async (item: string|TreeItem, file?: string) => {
+			const key	= typeof(item) == 'string'		? registry.getKey(item)
+						: item instanceof KeyTreeItem	? item.key
+						: undefined;
+			if (key) {
+				if (!file) {
+					const options: vscode.SaveDialogOptions = {
+						filters: {
+							'Registry Files': ['reg'],
+							'All Files': ['*']
+						}
+					};
+					file = (await vscode.window.showSaveDialog(options))?.fsPath;
+				}
+
+				if (file)
+					return await key.export(file);
+			}
+
+		}),
+
+		vscode.commands.registerCommand("regedit.import", async (file?: string) => {
 			if (!file) {
-				const options: vscode.SaveDialogOptions = {
+				const options: vscode.OpenDialogOptions = {
 					filters: {
 						'Registry Files': ['reg'],
 						'All Files': ['*']
 					}
 				};
-				file = (await vscode.window.showSaveDialog(options))?.fsPath;
+				file = (await vscode.window.showOpenDialog(options))?.[0].fsPath;
 			}
-
 			if (file)
-				return await key.export(file);
-		}
+				registry.importReg(file).then(() => regedit?.recreate());
+		}),
 
-	});
+		vscode.commands.registerCommand("regedit.copy", (item: TreeItem) => {
+			copy(item, false);
+		}),
 
-	registerCommand("regedit.import", async (file?: string) => {
-		if (!file) {
-			const options: vscode.OpenDialogOptions = {
-				filters: {
-					'Registry Files': ['reg'],
-					'All Files': ['*']
+		vscode.commands.registerCommand("regedit.copy_strict", (item: TreeItem) => {
+			copy(item, true);
+		}),
+
+		vscode.commands.registerCommand("regedit.find",	async (item?: KeyTreeItem, pattern?: string, searchFlags?: number) => {
+			for (;;) {
+				if (!searchFlags && !(searchFlags = await pickFlags(["Keys", "Value", "Data", "Case Sensitive", "Exact"], prevSearchFlags, "Select search flags")))
+					return;
+
+				prevSearchFlags = searchFlags;
+				//if (!pattern && !(pattern = await vscode.window.showInputBox({prompt: 'Enter the value to find'})))
+				if (pattern || (pattern = await showInputWithBackButton('Enter the value to find', prevSearchText))) {
+					prevSearchText = pattern;
+					break;
 				}
-			};
-			file = (await vscode.window.showOpenDialog(options))?.[0].fsPath;
-		}
-		if (file)
-			registry.importReg(file).then(() => regedit?.recreate());
-	});
 
-	registerCommand("regedit.copy", async (item: TreeItem) => {
-		copy(item, false);
-	});
-
-	registerCommand("regedit.copy_strict", async (item: TreeItem) => {
-		copy(item, true);
-	});
-
-	let prevSearchFlags = 7;
-	let prevSearchText = '';
-	registerCommand("regedit.find",	async (item?: KeyTreeItem, pattern?: string, searchFlags?: number) => {
-		for (;;) {
-			if (!searchFlags && !(searchFlags = await pickFlags(["Keys", "Value", "Data", "Case Sensitive", "Exact"], prevSearchFlags, "Select search flags")))
-				return;
-
-			prevSearchFlags = searchFlags;
-			//if (!pattern && !(pattern = await vscode.window.showInputBox({prompt: 'Enter the value to find'})))
-			if (pattern || (pattern = await showInputWithBackButton('Enter the value to find', prevSearchText))) {
-				prevSearchText = pattern;
-				break;
+				searchFlags = undefined;
+				pattern = undefined;
 			}
 
-			searchFlags = undefined;
-			pattern = undefined;
-		}
+			if (item instanceof KeyTreeItem) {
+				const uri = key_to_uri(item.key.path, 'regsearch', pattern, searchFlags.toString());
+				const doc = await vscode.workspace.openTextDocument(uri);
+				vscode.languages.setTextDocumentLanguage(doc, 'reg');
+				const editor = await vscode.window.showTextDocument(doc, { preview: false });
+				WatchForClose.onClose(editor, editor => searchTextProvider.close(editor.document.uri));
 
-		if (item instanceof KeyTreeItem) {
-			const doc = await vscode.workspace.openTextDocument(vscode.Uri.from({
-				scheme: 'regsearch',
-				path: item.key.path.replace(/\\/g,'/'),
-				query: pattern,
-				fragment: searchFlags.toString()
-			}));
-			vscode.languages.setTextDocumentLanguage(doc, 'reg');
-			const editor = await vscode.window.showTextDocument(doc, { preview: false });
-			WatchForClose.onClose(editor, editor => searchTextProvider.close(editor.document.uri));
+	/*
+				const 	doc 	= await vscode.workspace.openTextDocument({language: 'reg', content: 'Windows Registry Editor Version 5.00\n'});
+				const 	editor	= await vscode.window.showTextDocument(doc);
+				let		timeout: NodeJS.Timeout | undefined;
+				const	pending: string[] = [];
+				//let lastKey	= '';
 
-/*
-			const 	doc 	= await vscode.workspace.openTextDocument({language: 'reg', content: 'Windows Registry Editor Version 5.00\n'});
-			const 	editor	= await vscode.window.showTextDocument(doc);
-			let		timeout: NodeJS.Timeout | undefined;
-			const	pending: string[] = [];
-			//let lastKey	= '';
+				const flushPending = () => editor.edit(editBuilder => {
+					const lastLine = doc.lineAt(doc.lineCount - 1);
+					const lastLineRange = lastLine.range.with(undefined, new vscode.Position(lastLine.range.end.line, 0));
+					editBuilder.insert(lastLineRange.end, pending.join('\n') + '\n');
+					pending.length = 0;
+					timeout = undefined;
+				});
 
-			const flushPending = () => editor.edit(editBuilder => {
-				const lastLine = doc.lineAt(doc.lineCount - 1);
-				const lastLineRange = lastLine.range.with(undefined, new vscode.Position(lastLine.range.end.line, 0));
-				editBuilder.insert(lastLineRange.end, pending.join('\n') + '\n');
-				pending.length = 0;
-				timeout = undefined;
-			});
+				const prog: registry.SearchResults = {
+					update: x => {},
+					found:	x => {
+						if (x.length == 0)
+							return;
 
-			const prog: registry.SearchResults = {
-				update: x => {},
-				found:	x => {
-					if (x.length == 0)
-						return;
+						if (x[0] && x[0] != ' ') {
+							x = '\n[' + x + ']';
+						} else {
+							const data = registry.output_to_data(x);
+							if (data)
+								x = `"${data[0]}"=${registry.data_to_regstring(data[1], true)}`;
+						}
+						pending.push(x);
 
-					if (x[0] && x[0] != ' ') {
-						x = '\n[' + x + ']';
-					} else {
-						const data = registry.output_to_data(x);
-						if (data)
-							x = `"${data[0]}"=${registry.data_to_regstring(data[1], true)}`;
-					}
-					pending.push(x);
+						if (!timeout)
+							timeout = setTimeout(flushPending, 100); // Adjust the delay as needed
+					},
+					cancelled:	false,
+				};
 
-					if (!timeout)
-						timeout = setTimeout(flushPending, 100); // Adjust the delay as needed
-				},
-				cancelled:	false,
-			};
+				await item.key.search(pattern, prog);
+				pending.push(';finished');
+				flushPending();
+	*/
+			}
+		}),
 
-			await item.key.search(pattern, prog);
-			pending.push(';finished');
-			flushPending();
-*/
-		}
-	});
+		vscode.commands.registerTextEditorCommand("regedit.viewInReg", editor => {
+			const	doc		= editor.document;
+			const	host	= doc.uri.authority;
+			let		line 	= editor.selection.start.line;
+			const	lineText = doc.lineAt(line).text;
+			const 	key_re	= /^\s*\[(.*)\]/;
 
-	registerTextEditorCommand("regedit.viewInReg", async editor => {
-		const	doc		= editor.document;
-		let		line 	= editor.selection.start.line;
-		const	lineText = doc.lineAt(line).text;
-		const 	key_re	= /^\s*\[(.*)\]/;
-
-		if (lineText.startsWith('[')) {
-			const key = key_re.exec(lineText)?.[1];
-			if (key)
-				regedit.selectKey(key);
-
-		} else {
-			const value = /"(.*)"=/.exec(lineText)?.[1];
-			if (value) {
-				let m:RegExpExecArray|null = null;
-				while (--line >= 0 && !(m = key_re.exec(doc.lineAt(line).text)));
-
-				const key = m?.[1];
+			if (lineText.startsWith('[')) {
+				const key = key_re.exec(lineText)?.[1];
 				if (key)
-					regedit.selectValue(key, value);
+					regedit.selectKey(key, host);
+
+			} else {
+				const value = /"(.*)"=/.exec(lineText)?.[1];
+				if (value) {
+					let m:RegExpExecArray|null = null;
+					while (--line >= 0 && !(m = key_re.exec(doc.lineAt(line).text)));
+
+					const key = m?.[1];
+					if (key)
+						regedit.selectValue(key, value, host);
+				}
 			}
-		}
-	});
+		})
+	);
 
 
 }

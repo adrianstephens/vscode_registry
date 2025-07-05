@@ -3,7 +3,7 @@
 	"displayName": "Registry Editor",
 	"description": "A Registry Editor for VSCode",
 	"icon": "assets/icon.png",
-	"version": "0.6.2",
+	"version": "0.6.3",
 	"publisher": "isopodlabs",
 	"repository": "https://github.com/adrianstephens/vscode_registry",
 	"engines": {
@@ -82,8 +82,13 @@
 				},
 				"regedit.regExecutable": {
 					"type": "string",
-					"description": "Specifies the path of the a reg.exe.",
+					"description": "Specifies the path of the reg.exe (leave blank to use the one provided with extension).",
 					"when": "config.regedit.useCustomReg"
+				},
+				"regedit.reopenRemotes": {
+					"type": "boolean",
+					"default": false,
+					"description": "Reopen remote registries on startup."
 				}
 			}
 		},
